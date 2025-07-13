@@ -28,6 +28,11 @@ model User {
   invitedById  Int?
   invitedUsers User[] @relation("Referrals")
 
+  wgPublicKey  String?
+  wgPrivateKey String?
+  wgAddress    String?
+  wgId         String?
+
   payments Payment[]
   logs     EventLog[]
 
@@ -36,16 +41,34 @@ model User {
 }
 
 model Payment {
-  id        Int               @id @default(autoincrement())
-  user      User              @relation(fields: [userId], references: [id])
+  id        Int      @id @default(autoincrement())
+  user      User     @relation(fields: [userId], references: [id])
   userId    Int
-  amount    Float
-  currency  String
-  createdAt DateTime          @default(now())
-  method    String
-  status    String
-  plan      SubscriptionPlan? @relation(fields: [planId], references: [id])
-  planId    Int?
+  amount    Float // Сумма в копейках
+  currency  String // Валюта (RUB, USD, etc.)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Информация о способе оплаты
+  method String // "telegram_payments", "yookassa", etc.
+  status String // "pending", "completed", "failed", "cancelled"
+
+  // Telegram Payments данные
+  telegramPaymentChargeId String? @unique // ID платежа от Telegram
+  providerPaymentChargeId String? // ID платежа от провайдера
+  invoicePayload          String? // Payload инвойса
+
+  // Связанный план подписки
+  plan   SubscriptionPlan? @relation(fields: [planId], references: [id])
+  planId Int?
+
+  // Дополнительная информация
+  daysAdded   Int? // Количество добавленных дней подписки
+  description String? // Описание платежа
+  metadata    Json? // Дополнительные данные в JSON формате
+
+  // Старые поля для совместимости (можно удалить позже)
+  externalId String? // Универсальное поле для внешних ID
 }
 
 model PromoCode {
@@ -85,7 +108,7 @@ model EventLog {
   id        Int      @id @default(autoincrement())
   user      User     @relation(fields: [userId], references: [id])
   userId    Int
-  action    String 
+  action    String
   timestamp DateTime @default(now())
   metadata  Json?
 }

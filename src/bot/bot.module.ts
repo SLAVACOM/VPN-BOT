@@ -1,8 +1,10 @@
 import { Module } from '@nestjs/common';
-import { TelegrafModule } from 'nestjs-telegraf';
 import { ConfigModule, ConfigService } from '@nestjs/config';
+import { TelegrafModule } from 'nestjs-telegraf';
+import { PaymentModule } from 'src/payment/payment.module';
+import { UserService } from 'src/user/user.service';
+import { WireGuardService } from 'src/wireGuardService/WireGuardService.service';
 import { BotUpdate } from './bot.update';
-
 
 @Module({
   imports: [
@@ -14,7 +16,8 @@ import { BotUpdate } from './bot.update';
       }),
       inject: [ConfigService],
     }),
+    PaymentModule,
   ],
-  providers: [BotUpdate,],
+  providers: [BotUpdate, UserService, WireGuardService],
 })
 export class BotModule {}
