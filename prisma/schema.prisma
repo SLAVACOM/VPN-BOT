@@ -1,0 +1,91 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id         Int     @id @default(autoincrement())
+  telegramId BigInt  @unique
+  username   String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  subscriptionEnd DateTime?
+  configIssued    Boolean   @default(false)
+
+  promoCodeUsed   PromoCode? @relation(fields: [promoCodeUsedId], references: [id])
+  promoCodeUsedId Int?
+
+  subscriptionPlan   SubscriptionPlan? @relation(fields: [subscriptionPlanId], references: [id])
+  subscriptionPlanId Int?
+
+  invitedBy    User?  @relation("Referrals", fields: [invitedById], references: [id])
+  invitedById  Int?
+  invitedUsers User[] @relation("Referrals")
+
+  payments Payment[]
+  logs     EventLog[]
+
+  isDeleted Boolean   @default(false)
+  deletedAt DateTime?
+}
+
+model Payment {
+  id        Int               @id @default(autoincrement())
+  user      User              @relation(fields: [userId], references: [id])
+  userId    Int
+  amount    Float
+  currency  String
+  createdAt DateTime          @default(now())
+  method    String
+  status    String
+  plan      SubscriptionPlan? @relation(fields: [planId], references: [id])
+  planId    Int?
+}
+
+model PromoCode {
+  id           Int     @id @default(autoincrement())
+  code         String  @unique
+  description  String?
+  discountDays Int
+
+  maxUses   Int       @default(1000)
+  usedCount Int       @default(0)
+  isActive  Boolean   @default(true)
+  expiresAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  users     User[]
+}
+
+model SubscriptionPlan {
+  id           Int     @id @default(autoincrement())
+  name         String
+  durationDays Int
+  price        BigInt
+  currency     String
+  isActive     Boolean @default(true)
+
+  description String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  users    User[]
+  payments Payment[]
+}
+
+model EventLog {
+  id        Int      @id @default(autoincrement())
+  user      User     @relation(fields: [userId], references: [id])
+  userId    Int
+  action    String 
+  timestamp DateTime @default(now())
+  metadata  Json?
+}
