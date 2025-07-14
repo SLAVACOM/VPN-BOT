@@ -54,7 +54,10 @@ jobs:
             echo "🧹 Очистка старых Docker-образов:"
             docker image prune -f
 
-         
+            echo ""
+            echo "🏥 Проверка здоровья приложения:"
+            curl -fs http://95.142.41.133:3000/health && echo '✅ Health OK' || echo '❌ Health check не пройден'
+
       - name: Уведомление в Telegram (успех)
         if: success()
         uses: appleboy/telegram-action@master
@@ -63,11 +66,13 @@ jobs:
           token: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           format: html
           message: |
-            ✅ <b>Успешный деплой VPN-BOT!</b><br><br>
-            🗂 Репозиторий: <code>${{ github.repository }}</code><br>
-            🌿 Ветка: <code>${{ github.ref_name }}</code><br>
-            🔨 Коммит: <a href="https://github.com/${{ github.repository }}/commit/${{ github.sha }}">${{ github.sha }}</a><br>
-            🌍 Сервер: <code>${{ secrets.SSH_HOST }}</code><br><br>
+            ✅ <b>Успешный деплой VPN-BOT!</b>
+
+            🗂 Репозиторий: <code>${{ github.repository }}</code>
+            🌿 Ветка: <code>${{ github.ref_name }}</code>
+            🔨 Коммит: <a href="https://github.com/${{ github.repository }}/commit/${{ github.sha }}">${{ github.sha }}</a>
+            🌍 Сервер: <code>${{ secrets.SSH_HOST }}</code>
+
             Контейнеры пересобраны, миграции выполнены, старые образы удалены, бот активен ✅
 
       - name: Уведомление в Telegram (ошибка)
@@ -78,8 +83,10 @@ jobs:
           token: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           format: html
           message: |
-            ❌ <b>Ошибка при деплое VPN-BOT!</b><br><br>
-            🗂 Репозиторий: <code>${{ github.repository }}</code><br>
-            🌿 Ветка: <code>${{ github.ref_name }}</code><br>
-            🔨 Коммит: <a href="https://github.com/${{ github.repository }}/commit/${{ github.sha }}">${{ github.sha }}</a><br><br>
+            ❌ <b>Ошибка при деплое VPN-BOT!</b>
+
+            🗂 Репозиторий: <code>${{ github.repository }}</code>
+            🌿 Ветка: <code>${{ github.ref_name }}</code>
+            🔨 Коммит: <a href="https://github.com/${{ github.repository }}/commit/${{ github.sha }}">${{ github.sha }}</a>
+
             ⚠️ Логи: <a href="https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}">Перейти к workflow</a>
