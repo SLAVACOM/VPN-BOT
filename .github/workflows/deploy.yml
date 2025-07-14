@@ -54,10 +54,7 @@ jobs:
             echo "🧹 Очистка старых Docker-образов:"
             docker image prune -f
 
-            echo ""
-            echo "🏥 Проверка здоровья приложения:"
-            curl -fs http://95.142.41.133:3000/health && echo '✅ Health OK' || echo '❌ Health check не пройден'
-
+         
       - name: Уведомление в Telegram (успех)
         if: success()
         uses: appleboy/telegram-action@master
