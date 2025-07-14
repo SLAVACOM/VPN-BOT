@@ -1,54 +1,11 @@
-version: '3.8'
-
 services:
-  # PostgreSQL база данных
-  postgres:
-    image: postgres:15-alpine
-    container_name: nest-tg-bot-postgres
-    restart: unless-stopped
-    environment:
-      POSTGRES_DB: ${DATABASE_NAME:-nest_tg_bot}
-      POSTGRES_USER: ${DATABASE_USER:-postgres}
-      POSTGRES_PASSWORD: ${DATABASE_PASSWORD:-password}
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
-      - ./init.sql:/docker-entrypoint-initdb.d/init.sql:ro
-    ports:
-      - '${POSTGRES_PORT:-5432}:5432'
-    networks:
-      - bot-network
-    healthcheck:
-      test: ['CMD-SHELL', 'pg_isready -U ${DATABASE_USER:-postgres}']
-      interval: 30s
-      timeout: 10s
-      retries: 5
-
-  # Redis для кэширования
-  redis:
-    image: redis:7-alpine
-    container_name: nest-tg-bot-redis
-    restart: unless-stopped
-    command: redis-server --appendonly yes --requirepass ${REDIS_PASSWORD:-redis_password}
-    volumes:
-      - redis_data:/data
-    ports:
-      - '${REDIS_PORT:-6379}:6379'
-    networks:
-      - bot-network
-    healthcheck:
-      test: ['CMD', 'redis-cli', '--raw', 'incr', 'ping']
-      interval: 30s
-      timeout: 10s
-      retries: 5
-
-  # NestJS Telegram Bot приложение
   app:
     build:
       context: .
       dockerfile: Dockerfile
       target: production
     container_name: nest-tg-bot-app
-    restart: unless-stopped
+    restart: always
     environment:
       # Database
       DATABASE_URL: postgresql://${DATABASE_USER:-postgres}:${DATABASE_PASSWORD:-password}@postgres:5432/${DATABASE_NAME:-nest_tg_bot}
@@ -76,11 +33,6 @@ services:
 
       # Timezone
       TZ: Europe/Moscow
-    depends_on:
-      postgres:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
     ports:
       - '${APP_PORT:-3000}:3000'
     networks:
@@ -94,31 +46,7 @@ services:
       retries: 3
       start_period: 40s
 
-  # Nginx для проксирования (опционально)
-  nginx:
-    image: nginx:alpine
-    container_name: nest-tg-bot-nginx
-    restart: unless-stopped
-    ports:
-      - '80:80'
-      - '443:443'
-    volumes:
-      - ./nginx.conf:/etc/nginx/nginx.conf:ro
-      - ./ssl:/etc/nginx/ssl:ro
-      - nginx_logs:/var/log/nginx
-    depends_on:
-      - app
-    networks:
-      - bot-network
-
-volumes:
-  postgres_data:
-    driver: local
-  redis_data:
-    driver: local
-  nginx_logs:
-    driver: local
-
+  
 networks:
   bot-network:
     driver: bridge
