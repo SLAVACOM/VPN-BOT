@@ -3,9 +3,9 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: vpn-tg-bot-app
-    restart: always
-    environment:
+      container_name: vpn-tg-bot-app
+      restart: always
+      environment:
       # Database
       DATABASE_URL: postgresql://${DATABASE_USER:-postgres}:${DATABASE_PASSWORD:-password}@postgres:5432/${DATABASE_NAME:-nest_tg_bot}
 
