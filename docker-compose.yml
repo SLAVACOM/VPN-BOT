@@ -3,8 +3,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-      target: production
-    container_name: nest-tg-bot-app
+    container_name: vpn-tg-bot-app
     restart: always
     environment:
       # Database
