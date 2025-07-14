@@ -3,7 +3,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-      container_name: vpn-tg-bot-app
+    container_name: vpn-tg-bot-app
     restart: always
     environment:
       # Database
