@@ -1,5 +1,13 @@
 <p align="center">
-  <a href="http://nestjs.com/" target="blank"><img src="https://nestjs.com/img/logo-small.svg" width="120" alt="Nest Logo" /></a>
+  <a href="http://nestjs.com/" target="blank"><img src## Documentation
+
+- [🚀 Deployment Guide](./DEPLOYMENT.md) - Complete CI/CD setup and server configuration
+- [📢 Notification System Setup](./NOTIFICATION_SCHEDULER_SETUP.md) - Complete notification system configuration
+- [📋 Notification Summary](./NOTIFICATION_SUMMARY.md) - Quick overview of notification features
+- [👨‍💼 Admin Notifications](./ADMIN_NOTIFICATIONS.md) - Admin notification system
+- [🔐 Access Management](./ACCESS_MANAGEMENT.md) - Automatic WireGuard access control
+- [💳 Payment Setup](./PAYMENT_SETUP.md) - Payment system configuration
+- [📊 Plans System](./REDIS_PLANS_QUICKSTART.md) - Redis-based plans management//nestjs.com/img/logo-small.svg" width="120" alt="Nest Logo" /></a>
 </p>
 
 [circleci-image]: https://img.shields.io/circleci/build/github/nestjs/nest/master?token=abc123def456
@@ -99,6 +107,28 @@ $ npm run start:dev
 # production mode
 $ npm run start:prod
 ```
+
+## Docker deployment
+
+```bash
+# Build and run with docker-compose
+$ docker-compose up -d --build
+
+# View logs
+$ docker-compose logs -f app
+
+# Stop containers
+$ docker-compose down
+```
+
+## Environment setup
+
+1. Copy `.env.example` to `.env`
+2. Fill in your environment variables:
+   - `BOT_TOKEN` - Telegram bot token
+   - `DATABASE_URL` - PostgreSQL connection string
+   - `WIREGUARD_API` - WireGuard management API URL
+   - `ADMIN_IDS` - Comma-separated admin Telegram IDs
 
 ## Run tests
 

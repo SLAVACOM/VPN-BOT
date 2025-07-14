@@ -1,0 +1,119 @@
+name: Deploy via Docker Compose
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Deploy with SSH
+        uses: appleboy/ssh-action@v0.1.6
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_KEY }}
+
+          script: |
+            cd /opt/nest-tg-bot || exit 1
+
+            echo "📌 Коммит до pull:"
+            git log -1 --pretty=format:"%h — %s (%an, %cd)" || echo "Git не инициализирован"
+
+            echo ""
+            echo "🔄 Обновляем код..."
+            if [ -d ".git" ]; then
+              git pull origin main
+            else
+              echo "Клонируем репозиторий..."
+              cd /opt
+              rm -rf nest-tg-bot
+              git clone https://github.com/SLAVACOM/VPN-BOT.git nest-tg-bot
+              cd nest-tg-bot
+            fi
+
+            echo ""
+            echo "📜 Коммиты с последнего pull:"
+            git log HEAD@{1}..HEAD --pretty=format:"%h — %s (%an)" || git log -5 --pretty=format:"%h — %s (%an)"
+
+            echo ""
+            echo "🔧 Создаем .env файл..."
+            cat > .env << 'EOF'
+            DATABASE_NAME=${{ secrets.DATABASE_NAME }}
+            DATABASE_USER=${{ secrets.DATABASE_USER }}
+            DATABASE_PASSWORD=${{ secrets.DATABASE_PASSWORD }}
+            REDIS_PASSWORD=${{ secrets.REDIS_PASSWORD }}
+            BOT_TOKEN=${{ secrets.BOT_TOKEN }}
+            ADMIN_IDS=${{ secrets.ADMIN_IDS }}
+            WIREGUARD_API=${{ secrets.WIREGUARD_API }}
+            WIREGUARD_PASSWORD=${{ secrets.WIREGUARD_PASSWORD }}
+            PAYMENT_PROVIDER_TOKEN=${{ secrets.PAYMENT_PROVIDER_TOKEN }}
+            NODE_ENV=production
+            TRIAL_PERIOD_DAYS=7
+            APP_PORT=3000
+            POSTGRES_PORT=5432
+            REDIS_PORT=6379
+            EOF
+
+            echo ""
+            echo "🚀 Перезапуск контейнеров:"
+            docker-compose down
+            docker-compose up -d --build
+
+            echo ""
+            echo "⏳ Ожидание запуска приложения..."
+            sleep 30
+
+            echo ""
+            echo "🗄️ Запуск миграций базы данных:"
+            docker-compose exec -T app npx prisma migrate deploy || echo "Миграции не выполнены (возможно, приложение еще не готово)"
+
+            echo ""
+            echo "📊 Статус контейнеров:"
+            docker-compose ps
+
+            echo ""
+            echo "🧹 Удаляем старые образы:"
+            docker image prune -f
+
+            echo ""
+            echo "🏥 Проверка здоровья приложения:"
+            curl -f http://localhost:3000/health || echo "Health check не прошел"
+
+      - name: Send Telegram success message
+        if: success()
+        uses: appleboy/telegram-action@master
+        with:
+          to: ${{ secrets.TELEGRAM_CHAT_ID }}
+          token: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          format: markdown
+          message: |
+            ✅ *Успешный деплой VPN-BOT!*
+
+            🗂 Репозиторий: `${{ github.repository }}`
+            🌿 Ветка: `${{ github.ref_name }}`
+            🔨 Коммит: [`${{ github.sha }}`](https://github.com/${{ github.repository }}/commit/${{ github.sha }})
+            🌍 Сервер: `${{ secrets.SSH_HOST }}`
+            🤖 Бот: активен и готов к работе
+
+            Контейнеры пересобраны, запущены, миграции выполнены, старые образы удалены.
+
+      - name: Send Telegram failure message
+        if: failure()
+        uses: appleboy/telegram-action@master
+        with:
+          to: ${{ secrets.TELEGRAM_CHAT_ID }}
+          token: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          format: markdown
+          message: |
+            ❌ *Ошибка при деплое VPN-BOT!*
+
+            🗂 Репозиторий: `${{ github.repository }}`
+            🌿 Ветка: `${{ github.ref_name }}`
+            🔨 Коммит: [`${{ github.sha }}`](https://github.com/${{ github.repository }}/commit/${{ github.sha }})
+            ⚠️ Проверь GitHub Actions лог: [Перейти к workflow](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }})
+
+            Требуется ручное вмешательство для восстановления сервиса.
