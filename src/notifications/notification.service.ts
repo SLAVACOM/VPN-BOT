@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { InjectBot } from 'nestjs-telegraf';
 import { PrismaService } from 'prisma/prisma.service';
+import { escapeMarkdown } from 'src/utils/format.utils';
 import { Telegraf } from 'telegraf';
 
 @Injectable()
@@ -35,10 +36,14 @@ export class NotificationService {
         return false;
       }
 
-      await this.bot.telegram.sendMessage(user.telegramId.toString(), message, {
-        parse_mode: options?.parseMode || 'Markdown',
-        reply_markup: options?.replyMarkup,
-      });
+      await this.bot.telegram.sendMessage(
+        user.telegramId.toString(),
+        escapeMarkdown(message),
+        {
+          parse_mode: options?.parseMode || 'Markdown',
+          reply_markup: options?.replyMarkup,
+        },
+      );
 
       // Логируем событие если указан logAction
       if (options?.logAction) {
@@ -170,9 +175,13 @@ export class NotificationService {
     let successCount = 0;
     for (const adminId of adminIds) {
       try {
-        await this.bot.telegram.sendMessage(adminId.toString(), message, {
-          parse_mode: 'Markdown',
-        });
+        await this.bot.telegram.sendMessage(
+          adminId.toString(),
+          escapeMarkdown(message),
+          {
+            parse_mode: 'Markdown',
+          },
+        );
         successCount++;
       } catch (error) {
         this.logger.error(
@@ -236,9 +245,13 @@ export class NotificationService {
     let successCount = 0;
     for (const adminId of adminIds) {
       try {
-        await this.bot.telegram.sendMessage(adminId.toString(), message, {
-          parse_mode: 'Markdown',
-        });
+        await this.bot.telegram.sendMessage(
+          adminId.toString(),
+          escapeMarkdown(message),
+          {
+            parse_mode: 'Markdown',
+          },
+        );
         successCount++;
       } catch (error) {
         this.logger.error(
