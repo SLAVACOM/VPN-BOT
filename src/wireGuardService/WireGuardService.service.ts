@@ -101,4 +101,24 @@ export class WireGuardService {
       return response.data;
     });
   }
+
+  async disableClient(clientId: string): Promise<boolean> {
+    return this.requestWithSession(async (axios) => {
+      const response = await axios.post(
+        `${this.apiBase}/wireguard/client/${clientId}/disable`,
+        { responseType: 'text' },
+      );
+      return response.status === 200 || response.status === 204;
+    });
+  }
+
+  async enableClient(clientId: string): Promise<boolean> {
+    return this.requestWithSession(async (axios) => {
+      const response = await axios.post(
+        `${this.apiBase}/wireguard/client/${clientId}/enable`,
+        { responseType: 'text' },
+      );
+      return response.status === 200 || response.status === 204;
+    });
+  }
 }

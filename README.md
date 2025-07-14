@@ -21,9 +21,65 @@
   <!--[![Backers on Open Collective](https://opencollective.com/nest/backers/badge.svg)](https://opencollective.com/nest#backer)
   [![Sponsors on Open Collective](https://opencollective.com/nest/sponsors/badge.svg)](https://opencollective.com/nest#sponsor)-->
 
+# 🤖 Telegram VPN Bot
+
 ## Description
 
-[Nest](https://github.com/nestjs/nest) framework TypeScript starter repository.
+Telegram bot for VPN service management built with [NestJS](https://github.com/nestjs/nest) framework and TypeScript.
+
+## Features
+
+### 🎁 Trial Period System
+
+- **7-day free trial** for new users
+- Automatic trial activation on registration
+- Trial period tracking and notifications
+
+### 🔔 Advanced Notification System
+
+- **Multi-tier reminders**: 1 week, 3 days, and 1 day before expiration
+- **Automated scheduling** with cron jobs (Europe/Moscow timezone)
+- **Smart notifications** for trial and subscription periods
+- **Admin notifications** for registrations and purchases
+- **Mass broadcasting** system for administrators
+
+### 💰 Payment Integration
+
+- Telegram Payments integration
+- Multiple subscription plans
+- Payment history tracking
+- Promo code system
+
+### 👥 Referral System
+
+- Referral link generation
+- Referral statistics tracking
+- Referrer rewards system
+
+### 🔧 Admin Tools
+
+- User management
+- Plan administration
+- Promo code creation
+- Payment statistics
+- Notification analytics
+- Mass messaging system
+
+### 📊 Analytics & Logging
+
+- Comprehensive event logging
+- Payment analytics
+- User statistics
+- Notification tracking
+
+## Documentation
+
+- [📢 Notification System Setup](./NOTIFICATION_SCHEDULER_SETUP.md) - Complete notification system configuration
+- [📋 Notification Summary](./NOTIFICATION_SUMMARY.md) - Quick overview of notification features
+- [👨‍💼 Admin Notifications](./ADMIN_NOTIFICATIONS.md) - Admin notification system
+- [� Access Management](./ACCESS_MANAGEMENT.md) - Automatic WireGuard access control
+- [�💳 Payment Setup](./PAYMENT_SETUP.md) - Payment system configuration
+- [📊 Plans System](./REDIS_PLANS_QUICKSTART.md) - Redis-based plans management
 
 ## Project setup
 

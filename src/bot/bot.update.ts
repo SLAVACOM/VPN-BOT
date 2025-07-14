@@ -1,16 +1,15 @@
 import { Action, Command, Ctx, Help, On, Start, Update } from 'nestjs-telegraf';
+import { PrismaService } from 'prisma/prisma.service';
+import { NotificationSchedulerService } from 'src/notifications/notification-scheduler.service';
+import { NotificationService } from 'src/notifications/notification.service';
 import { PaymentHistoryService } from 'src/payment/payment-history.service';
 import { PaymentService } from 'src/payment/payment.service';
 import { PlanAdminService } from 'src/payment/plan-admin.service';
 import { UserService } from 'src/user/user.service';
+import { escapeMarkdown } from 'src/utils/format.utils';
 import { WireGuardService } from 'src/wireGuardService/WireGuardService.service';
 import { Context } from 'telegraf';
 import { InlineKeyboardMarkup } from 'telegraf/typings/core/types/typegram';
-import {
-  formatPaymentStats,
-  formatUserPaymentHistory,
-  isAdmin,
-} from '../utils';
 
 // Добавляем интерфейс для контекста с match
 interface CallbackContext extends Context {
@@ -21,6 +20,7 @@ interface CallbackContext extends Context {
 export class BotUpdate {
   private readonly adminIds =
     process.env.ADMIN_IDS?.split(',').map((id) => parseInt(id.trim())) || [];
+  private readonly trialPeriodDays = Number(process.env.TRIAL_PERIOD_DAYS) || 7;
 
   constructor(
     private readonly userService: UserService,
@@ -28,6 +28,9 @@ export class BotUpdate {
     private readonly paymentService: PaymentService,
     private readonly paymentHistoryService: PaymentHistoryService,
     private readonly planAdminService: PlanAdminService,
+    private readonly notificationScheduler: NotificationSchedulerService,
+    private readonly notificationService: NotificationService,
+    private readonly prisma: PrismaService,
   ) {
     this.setupBotCommands();
   }
@@ -60,12 +63,15 @@ export class BotUpdate {
           command: 'clearplanscache',
           description: 'Очистить кэш планов [ADMIN]',
         },
+        { command: 'broadcast', description: 'Массовая рассылка [ADMIN]' },
+        {
+          command: 'notifstats',
+          description: 'Статистика уведомлений [ADMIN]',
+        },
       ];
 
       console.log('[BOT] Setting up bot commands...');
 
-      // Можно установить команды через API, но обычно это делается через BotFather
-      // Здесь мы просто логируем команды
       console.log('[BOT] User commands:', userCommands);
       console.log('[BOT] Admin commands:', adminCommands);
     } catch (error) {
@@ -93,7 +99,6 @@ export class BotUpdate {
           { text: '💰 Купить подписку', callback_data: 'buy_subscription' },
           { text: '💳 История платежей', callback_data: 'payment_history' },
         ],
-        [{ text: '👥 Мой реферер', callback_data: 'checkref' }],
         [
           { text: '❓ Помощь', callback_data: 'show_help_menu' },
           { text: '⚡ Быстрые действия', callback_data: 'quick_actions' },
@@ -121,7 +126,6 @@ export class BotUpdate {
           { text: '💰 Купить подписку', callback_data: 'buy_subscription' },
           { text: '💳 История платежей', callback_data: 'payment_history' },
         ],
-        [{ text: '👥 Мой реферер', callback_data: 'checkref' }],
         [
           { text: '🔧 Создать промокод', callback_data: 'admin_createpromo' },
           { text: '📝 Список промокодов', callback_data: 'admin_listpromos' },
@@ -131,6 +135,13 @@ export class BotUpdate {
           {
             text: '📊 Статистика платежей',
             callback_data: 'admin_paymentstats',
+          },
+        ],
+        [
+          { text: '📢 Массовая рассылка', callback_data: 'admin_broadcast' },
+          {
+            text: '📈 Статистика уведомлений',
+            callback_data: 'admin_notifstats',
           },
         ],
         [{ text: '🗑️ Очистить кэш', callback_data: 'admin_clearplanscache' }],
@@ -280,9 +291,8 @@ export class BotUpdate {
     if (user) {
       await ctx.reply('Вы уже зарегистрированы ✅');
 
-      // Показать главное меню
-      const isAdminUser = isAdmin(tgId);
-      const keyboard = isAdminUser
+      const isAdmin = this.isAdmin(tgId);
+      const keyboard = isAdmin
         ? this.getAdminKeyboard()
         : this.getUserMainKeyboard();
 
@@ -316,7 +326,22 @@ export class BotUpdate {
         `[START] User created with ID: ${createdUser.id}, invitedById: ${createdUser.invitedById}`,
       );
 
-      let welcomeMessage = `Добро пожаловать! 🎉\nКонфигурация WireGuard выдана ✅`;
+      // Отправляем уведомление администратору о новой регистрации
+      try {
+        const referrerName = referrerUsername ? `@${referrerUsername}` : null;
+        await this.notificationService.sendAdminRegistrationNotification(
+          createdUser.id,
+          tgId.toString(),
+          username,
+          ctx.from?.first_name,
+          ctx.from?.last_name,
+          referrerName!,
+        );
+      } catch (error) {
+        console.error('Error sending admin registration notification:', error);
+      }
+
+      let welcomeMessage = `Добро пожаловать! 🎉\nКонфигурация WireGuard выдана ✅\n\n🎁 *Пробный период активирован!*\n⏰ У вас есть 7 дней бесплатного доступа к VPN\n📅 Пробный период действует до: ${createdUser.subscriptionEnd?.toLocaleDateString('ru-RU')}`;
       if (referrerUserId) {
         const referrerDisplay = referrerUsername
           ? `@${referrerUsername}`
@@ -324,17 +349,18 @@ export class BotUpdate {
         welcomeMessage += `\n👥 Вы приглашены пользователем ${referrerDisplay}`;
       }
 
-      await ctx.reply(welcomeMessage);
+      await ctx.reply(welcomeMessage, { parse_mode: 'Markdown' });
 
       // Показать главное меню для нового пользователя
-      const isAdminUser = isAdmin(tgId);
-      const keyboard = isAdminUser
+      const isAdmin = this.isAdmin(tgId);
+      const keyboard = isAdmin
         ? this.getAdminKeyboard()
         : this.getUserMainKeyboard();
 
       await ctx.reply(
-        '🎛️ Главное меню:\nВыберите нужное действие из списка ниже.',
+        '🎛️ Главное меню:\n💡 *Ваш пробный период уже активен!* Используйте QR-код или конфигурацию для подключения к VPN.',
         {
+          parse_mode: 'Markdown',
           reply_markup: keyboard,
         },
       );
@@ -351,7 +377,7 @@ export class BotUpdate {
       'ℹ️ Команды:\n/start — начать\n/menu — главное меню\n/help — помощь\n/ref — реферальная ссылка\n/статистика (или /stats) — подробная статистика рефералов\n/checkref — проверить своего реферера\n/qr — получить QR-код для WireGuard\n/config — получить конфигурацию WireGuard\n/promo <код> — активировать промокод\n/subscription — информация о подписке\n/buy — купить подписку';
 
     // Добавить админские команды для администраторов
-    if (tgId && isAdmin(tgId)) {
+    if (tgId && this.isAdmin(tgId)) {
       helpMessage +=
         '\n\n🔧 Админские команды:\n/createpromo <код> <дни> [макс] [описание] — создать промокод\n/listpromos — список промокодов';
     }
@@ -383,12 +409,12 @@ export class BotUpdate {
       return;
     }
 
-    const isAdminUser = isAdmin(tgId);
-    const keyboard = isAdminUser
+    const isAdmin = this.isAdmin(tgId);
+    const keyboard = isAdmin
       ? this.getAdminKeyboard()
       : this.getUserMainKeyboard();
 
-    const welcomeText = isAdminUser
+    const welcomeText = isAdmin
       ? `👋 Добро пожаловать, администратор!\n\n🎛️ Главное меню:\nВыберите нужное действие из списка ниже.`
       : `👋 Добро пожаловать!\n\n🎛️ Главное меню:\nВыберите нужное действие из списка ниже.`;
 
@@ -481,36 +507,6 @@ export class BotUpdate {
     }
 
     await ctx.reply(statsMessage);
-  }
-
-  @Command('checkref')
-  async onCheckRef(@Ctx() ctx: Context) {
-    const tgId = ctx.from?.id;
-    if (!tgId) return;
-
-    const user = await this.userService.findByTelegramId(tgId);
-    if (!user) {
-      await ctx.reply('Вы ещё не зарегистрированы.');
-      return;
-    }
-
-    const userWithReferrer = await this.userService.checkReferralConnection(
-      user.id,
-    );
-
-    if (userWithReferrer?.invitedBy) {
-      const referrer = userWithReferrer.invitedBy;
-      const referrerDisplay = referrer.username
-        ? `@${referrer.username}`
-        : `ID: ${referrer.id}`;
-      await ctx.reply(
-        `👥 Вы были приглашены пользователем ${referrerDisplay} (TG ID: ${referrer.telegramId})`,
-      );
-    } else {
-      await ctx.reply(
-        '❌ У вас нет реферера. Вы зарегистрировались самостоятельно.',
-      );
-    }
   }
 
   @Command(['qr', 'qrcode', 'кюар'])
@@ -626,7 +622,6 @@ export class BotUpdate {
       return;
     }
 
-    // Получить текст команды
     if (!('text' in ctx.message!)) {
       await ctx.reply(
         '❓ Использование: /promo <код>\n\nПример: /promo WELCOME2024\n\nВведите промокод после команды.',
@@ -703,9 +698,23 @@ export class BotUpdate {
         );
         const endDateStr = endDate.toLocaleDateString('ru-RU');
 
-        message += `✅ Подписка активна\n`;
-        message += `📅 Действует до: ${endDateStr}\n`;
-        message += `⏰ Осталось дней: ${daysLeft}\n`;
+        // Проверяем, является ли это пробным периодом (если нет использованного промокода и пользователь новый)
+        const isTrialPeriod =
+          !userWithPromo.promoCodeUsed &&
+          userWithPromo.createdAt &&
+          now.getTime() - userWithPromo.createdAt.getTime() <
+            8 * 24 * 60 * 60 * 1000; // создан менее 8 дней назад
+
+        if (isTrialPeriod) {
+          message += `🎁 Пробный период активен\n`;
+          message += `📅 Действует до: ${endDateStr}\n`;
+          message += `⏰ Осталось дней: ${daysLeft}\n`;
+          message += `💡 Это ваш бесплатный пробный период на 7 дней\n`;
+        } else {
+          message += `✅ Подписка активна\n`;
+          message += `📅 Действует до: ${endDateStr}\n`;
+          message += `⏰ Осталось дней: ${daysLeft}\n`;
+        }
       } else {
         message += `❌ Подписка истекла\n`;
         message += `📅 Истекла: ${endDate.toLocaleDateString('ru-RU')}\n`;
@@ -722,7 +731,22 @@ export class BotUpdate {
       }
     }
 
-    message += `\n\n💡 Используйте /promo <код> для активации промокода`;
+    // Добавляем разные подсказки в зависимости от статуса подписки
+    if (userWithPromo?.subscriptionEnd) {
+      const now = new Date();
+      const endDate = new Date(userWithPromo.subscriptionEnd);
+
+      if (endDate <= now) {
+        message += `\n\n� Для продления доступа используйте /buy`;
+        message += `\n🎫 Или активируйте промокод: /promo <код>`;
+      } else {
+        message += `\n\n🎫 Используйте /promo <код> для активации промокода`;
+        message += `\n💰 Продлить подписку: /buy`;
+      }
+    } else {
+      message += `\n\n💰 Купить подписку: /buy`;
+      message += `\n🎫 Или используйте промокод: /promo <код>`;
+    }
 
     await ctx.reply(message);
   }
@@ -783,12 +807,6 @@ export class BotUpdate {
     await this.onSubscription(ctx);
   }
 
-  @Action('checkref')
-  async handleCheckRefCallback(@Ctx() ctx: Context) {
-    await ctx.answerCbQuery();
-    await this.onCheckRef(ctx);
-  }
-
   @Action('help')
   async handleHelpCallback(@Ctx() ctx: Context) {
     await ctx.answerCbQuery();
@@ -826,7 +844,7 @@ export class BotUpdate {
   async handleAdminCreatePromoCallback(@Ctx() ctx: Context) {
     await ctx.answerCbQuery();
     const tgId = ctx.from?.id;
-    if (!tgId || !isAdmin(tgId)) {
+    if (!tgId || !this.isAdmin(tgId)) {
       await ctx.reply('❌ У вас нет прав для выполнения этой команды.');
       return;
     }
@@ -847,7 +865,7 @@ export class BotUpdate {
   async handleAdminListPromosCallback(@Ctx() ctx: Context) {
     await ctx.answerCbQuery();
     const tgId = ctx.from?.id;
-    if (!tgId || !isAdmin(tgId)) {
+    if (!tgId || !this.isAdmin(tgId)) {
       await ctx.reply('❌ У вас нет прав для выполнения этой команды.');
       return;
     }
@@ -1223,6 +1241,51 @@ export class BotUpdate {
           const endDate =
             result.newSubscriptionEnd?.toLocaleDateString('ru-RU');
 
+          // Активируем доступ к WireGuard после покупки
+          try {
+            const user = await this.userService.findByTelegramId(
+              ctx.from?.id || 0,
+            );
+            if (user?.wgId) {
+              const enabled = await this.wgService.enableClient(user.wgId);
+              if (enabled) {
+                console.log(
+                  `[PAYMENT] Активирован доступ WireGuard для пользователя ${user.id}`,
+                );
+              } else {
+                console.warn(
+                  `[PAYMENT] Не удалось активировать доступ WireGuard для пользователя ${user.id}`,
+                );
+              }
+            }
+          } catch (error) {
+            console.error(
+              'Error enabling WireGuard access after payment:',
+              error,
+            );
+          }
+
+          // Отправляем уведомление администратору о покупке
+          try {
+            const user = await this.userService.findByTelegramId(
+              ctx.from?.id || 0,
+            );
+            if (user) {
+              await this.notificationService.sendAdminPurchaseNotification(
+                user.id,
+                plan.name,
+                payment.total_amount / 100, // Конвертируем из копеек в рубли
+                payment.currency,
+                'Telegram Payments',
+                ctx.from?.username,
+                ctx.from?.first_name,
+                ctx.from?.last_name,
+              );
+            }
+          } catch (error) {
+            console.error('Error sending admin purchase notification:', error);
+          }
+
           await ctx.reply(
             `🎉 *Платеж успешно обработан!*\n\n✅ Подписка активирована\n📦 План: ${plan.name}\n⏰ Период: ${plan.days} дней\n📅 Действует до: ${endDate}\n\n🚀 Теперь вы можете использовать VPN!`,
             {
@@ -1257,17 +1320,16 @@ export class BotUpdate {
   }
 
   // Админские команды
-  // Используем утилиту isAdmin из validation.utils
-  // private isAdmin(userId: number): boolean {
-  //   return this.adminIds.includes(userId);
-  // }
+  private isAdmin(userId: number): boolean {
+    return this.adminIds.includes(userId);
+  }
 
   @Command(['createpromo', 'создатьпромо'])
   async onCreatePromo(@Ctx() ctx: Context) {
     const tgId = ctx.from?.id;
     if (!tgId) return;
 
-    if (!isAdmin(tgId)) {
+    if (!this.isAdmin(tgId)) {
       await ctx.reply('❌ У вас нет прав для выполнения этой команды.');
       return;
     }
@@ -1334,7 +1396,7 @@ export class BotUpdate {
     const tgId = ctx.from?.id;
     if (!tgId) return;
 
-    if (!isAdmin(tgId)) {
+    if (!this.isAdmin(tgId)) {
       await ctx.reply('❌ У вас нет прав для выполнения этой команды.');
       return;
     }
@@ -1380,7 +1442,7 @@ export class BotUpdate {
     const tgId = ctx.from?.id;
     if (!tgId) return;
 
-    if (!isAdmin(tgId)) {
+    if (!this.isAdmin(tgId)) {
       await ctx.reply('❌ У вас нет прав для выполнения этой команды.');
       return;
     }
@@ -1424,7 +1486,7 @@ export class BotUpdate {
     const tgId = ctx.from?.id;
     if (!tgId) return;
 
-    if (!isAdmin(tgId)) {
+    if (!this.isAdmin(tgId)) {
       await ctx.reply('❌ У вас нет прав для выполнения этой команды.');
       return;
     }
@@ -1443,7 +1505,7 @@ export class BotUpdate {
   async handleAdminListPlansCallback(@Ctx() ctx: Context) {
     await ctx.answerCbQuery();
     const tgId = ctx.from?.id;
-    if (!tgId || !isAdmin(tgId)) {
+    if (!tgId || !this.isAdmin(tgId)) {
       await ctx.reply('❌ У вас нет прав для выполнения этой команды.');
       return;
     }
@@ -1454,7 +1516,7 @@ export class BotUpdate {
   async handleAdminClearPlansCacheCallback(@Ctx() ctx: Context) {
     await ctx.answerCbQuery();
     const tgId = ctx.from?.id;
-    if (!tgId || !isAdmin(tgId)) {
+    if (!tgId || !this.isAdmin(tgId)) {
       await ctx.reply('❌ У вас нет прав для выполнения этой команды.');
       return;
     }
@@ -1479,14 +1541,33 @@ export class BotUpdate {
         5,
       );
 
-      const history = {
-        payments,
-        totalPayments: payments.length,
-        totalAmount: payments.reduce((sum, p) => sum + p.amount, 0),
-      };
+      if (payments.length === 0) {
+        await ctx.reply('📭 У вас пока нет платежей');
+        return;
+      }
 
-      const message = formatUserPaymentHistory(history);
-      await ctx.reply(message, { parse_mode: 'MarkdownV2' });
+      let message = `💳 *История платежей:*\n\n`;
+
+      payments.forEach((payment, index) => {
+        const status =
+          payment.status === 'completed'
+            ? '✅'
+            : payment.status === 'pending'
+              ? '⏳'
+              : payment.status === 'failed'
+                ? '❌'
+                : '❓';
+        const amount = payment.amount / 100; // конвертируем копейки в рубли
+        const date = payment.createdAt.toLocaleDateString('ru-RU');
+        const planName = payment.plan?.name || 'Неизвестный план';
+
+        message += `${index + 1}. ${status} *${planName}*\n`;
+        message += `   💵 ${amount} ₽\n`;
+        message += `   📅 ${date}\n`;
+        message += `\n`;
+      });
+
+      await ctx.reply(message, { parse_mode: 'Markdown' });
     } catch (error) {
       console.error('Error getting payment history:', error);
       await ctx.reply('❌ Произошла ошибка при получении истории платежей.');
@@ -1498,16 +1579,35 @@ export class BotUpdate {
     const tgId = ctx.from?.id;
     if (!tgId) return;
 
-    if (!isAdmin(tgId)) {
+    if (!this.isAdmin(tgId)) {
       await ctx.reply('❌ У вас нет прав для выполнения этой команды.');
       return;
     }
 
     try {
       const stats = await this.paymentHistoryService.getPaymentStatistics();
-      const message = formatPaymentStats(stats);
 
-      await ctx.reply(message, { parse_mode: 'MarkdownV2' });
+      let message = `📊 *Статистика платежей:*\n\n`;
+      message += `📈 *Общая статистика:*\n`;
+      message += `• Всего платежей: ${stats.totalPayments.toString()}\n`;
+      message += `• Успешных: ${stats.completedPayments.toString()}\n`;
+      message += `• Неуспешных: ${stats.failedPayments.toString()}\n`;
+      message += `• Общая сумма: ${(stats.totalAmount / 100).toFixed(2)} ₽\n`;
+      message += `• Средняя сумма: ${(stats.averageAmount / 100).toFixed(2)} ₽\n\n`;
+
+      message += `📋 **По статусам:**\n`;
+      stats.paymentsByStatus.forEach((stat) => {
+        const amount = (stat._sum.amount || 0) / 100;
+        message += `• ${stat.status}: ${stat._count.status.toString()} (${amount.toFixed(2)} ₽)\n`;
+      });
+
+      message += `\n💳 *По методам оплаты:*\n`;
+      stats.paymentsByMethod.forEach((stat) => {
+        const amount = (stat._sum.amount || 0) / 100;
+        message += `• ${stat.method}: ${stat._count.method.toString()} (${amount.toFixed(2)} ₽)\n`;
+      });
+
+      await ctx.reply(escapeMarkdown(message), { parse_mode: 'MarkdownV2' });
     } catch (error) {
       console.error('Error getting payment statistics:', error);
       await ctx.reply('❌ Произошла ошибка при получении статистики.');
@@ -1525,10 +1625,207 @@ export class BotUpdate {
   async handleAdminPaymentStatsCallback(@Ctx() ctx: Context) {
     await ctx.answerCbQuery();
     const tgId = ctx.from?.id;
-    if (!tgId || !isAdmin(tgId)) {
+    if (!tgId || !this.isAdmin(tgId)) {
       await ctx.reply('❌ У вас нет прав для выполнения этой команды.');
       return;
     }
     await this.onPaymentStats(ctx);
+  }
+
+  // Команды для управления рассылками и уведомлениями
+  @Command(['broadcast', 'рассылка'])
+  async onBroadcast(@Ctx() ctx: Context) {
+    const tgId = ctx.from?.id;
+    if (!tgId) return;
+
+    if (!this.isAdmin(tgId)) {
+      await ctx.reply('❌ У вас нет прав для выполнения этой команды.');
+      return;
+    }
+
+    if (!('text' in ctx.message!)) {
+      await ctx.reply(
+        '📢 *Массовая рассылка*\n\n❓ Использование:\n/broadcast <тип> <сообщение>\n\n📋 *Типы получателей:*\n• `all` - все пользователи\n• `active` - с активной подпиской\n• `expired` - с истекшей подпиской\n\n💡 *Пример:*\n`/broadcast all Привет! У нас новые сервера!`',
+        { parse_mode: 'Markdown' },
+      );
+      return;
+    }
+
+    const parts = ctx.message.text.split(' ');
+    if (parts.length < 3) {
+      await ctx.reply(
+        '❌ Неверный формат команды.\n\nИспользование: /broadcast <тип> <сообщение>',
+      );
+      return;
+    }
+
+    const targetType = parts[1] as 'all' | 'active' | 'expired';
+    const message = parts.slice(2).join(' ');
+
+    if (!['all', 'active', 'expired'].includes(targetType)) {
+      await ctx.reply(
+        '❌ Неверный тип получателей. Используйте: all, active, expired',
+      );
+      return;
+    }
+
+    try {
+      await ctx.reply('🔄 Начинаю массовую рассылку...');
+
+      const result = await this.notificationScheduler.sendBroadcastMessage(
+        message,
+        targetType,
+      );
+
+      let resultMessage = `📊 *Результат рассылки:*\n\n`;
+      resultMessage += `✅ Отправлено: ${result.sent}\n`;
+      resultMessage += `❌ Ошибок: ${result.errors}\n`;
+      resultMessage += `📋 Тип: ${targetType}\n`;
+      resultMessage += `📝 Сообщение: ${message.substring(0, 100)}${message.length > 100 ? '...' : ''}`;
+
+      await ctx.reply(resultMessage, { parse_mode: 'Markdown' });
+    } catch (error) {
+      console.error('Error in broadcast command:', error);
+      await ctx.reply('❌ Произошла ошибка при выполнении рассылки.');
+    }
+  }
+
+  @Command(['notifstats', 'статистикауведомлений'])
+  async onNotificationStats(@Ctx() ctx: Context) {
+    const tgId = ctx.from?.id;
+    if (!tgId) return;
+
+    if (!this.isAdmin(tgId)) {
+      await ctx.reply('❌ У вас нет прав для выполнения этой команды.');
+      return;
+    }
+
+    try {
+      // Статистика за последние 7 дней
+      const weekAgo = new Date();
+      weekAgo.setDate(weekAgo.getDate() - 7);
+
+      const today = new Date();
+
+      // Получаем статистику уведомлений
+      const notificationCounts = await this.prisma.eventLog.groupBy({
+        by: ['action'],
+        where: {
+          timestamp: {
+            gte: weekAgo,
+            lte: today,
+          },
+          action: {
+            in: [
+              'EXPIRY_REMINDER_SENT',
+              'THREE_DAY_REMINDER_SENT',
+              'WEEK_REMINDER_SENT',
+              'EXPIRED_NOTIFICATION_SENT',
+              'WELCOME_NOTIFICATION_SENT',
+              'BROADCAST_MESSAGE_SENT',
+              'TRIAL_PERIOD_GRANTED',
+              'ADMIN_REGISTRATION_NOTIFICATION_SENT',
+              'ADMIN_PURCHASE_NOTIFICATION_SENT',
+              'SUBSCRIPTION_EXPIRED_ACCESS_DISABLED',
+              'DAILY_ACCESS_MANAGEMENT_COMPLETED',
+            ],
+          },
+        },
+        _count: {
+          action: true,
+        },
+      });
+
+      // Статистика пользователей
+      const [totalUsers, activeSubscriptions, expiredSubscriptions] =
+        await Promise.all([
+          this.prisma.user.count({ where: { isDeleted: false } }),
+          this.prisma.user.count({
+            where: {
+              subscriptionEnd: { gt: today },
+              isDeleted: false,
+            },
+          }),
+          this.prisma.user.count({
+            where: {
+              subscriptionEnd: { lt: today },
+              isDeleted: false,
+            },
+          }),
+        ]);
+
+      let message = `📈 *Статистика уведомлений*\n📅 За последние 7 дней\n\n`;
+
+      message += `👥 *Пользователи:*\n`;
+      message += `• Всего: ${totalUsers}\n`;
+      message += `• Активных подписок: ${activeSubscriptions}\n`;
+      message += `• Истекших подписок: ${expiredSubscriptions}\n\n`;
+
+      message += `🔔 *Отправленные уведомления:*\n`;
+
+      const actionNames = {
+        EXPIRY_REMINDER_SENT: 'Напоминания (завтра)',
+        THREE_DAY_REMINDER_SENT: 'Напоминания (3 дня)',
+        WEEK_REMINDER_SENT: 'Напоминания (неделя)',
+        EXPIRED_NOTIFICATION_SENT: 'Уведомления об истечении',
+        WELCOME_NOTIFICATION_SENT: 'Приветственные',
+        BROADCAST_MESSAGE_SENT: 'Массовые рассылки',
+        TRIAL_PERIOD_GRANTED: 'Выдача пробного периода',
+        ADMIN_REGISTRATION_NOTIFICATION_SENT:
+          'Уведомления о регистрации (админ)',
+        ADMIN_PURCHASE_NOTIFICATION_SENT: 'Уведомления о покупке (админ)',
+        SUBSCRIPTION_EXPIRED_ACCESS_DISABLED: 'Отключение доступа (истечение)',
+        DAILY_ACCESS_MANAGEMENT_COMPLETED: 'Управление доступом (системное)',
+      };
+
+      let totalNotifications = 0;
+      notificationCounts.forEach((count) => {
+        const actionName =
+          actionNames[count.action as keyof typeof actionNames] || count.action;
+        message += `• ${actionName}: ${count._count.action}\n`;
+        totalNotifications += count._count.action;
+      });
+
+      message += `\n📊 *Всего уведомлений:* ${totalNotifications}`;
+
+      await ctx.reply(message, { parse_mode: 'Markdown' });
+    } catch (error) {
+      console.error('Error getting notification stats:', error);
+      await ctx.reply('❌ Произошла ошибка при получении статистики.');
+    }
+  }
+
+  // Обработчики callback для рассылок
+  @Action('admin_broadcast')
+  async handleAdminBroadcastCallback(@Ctx() ctx: Context) {
+    await ctx.answerCbQuery();
+    const tgId = ctx.from?.id;
+    if (!tgId || !this.isAdmin(tgId)) {
+      await ctx.reply('❌ У вас нет прав для выполнения этой команды.');
+      return;
+    }
+
+    await ctx.reply(
+      '📢 *Массовая рассылка*\n\nДля отправки рассылки используйте команду:\n`/broadcast <тип> <сообщение>`\n\n📋 *Типы получателей:*\n• `all` - все пользователи\n• `active` - с активной подпиской\n• `expired` - с истекшей подпиской\n\n💡 *Пример:*\n`/broadcast all Привет! У нас новые сервера!`',
+      {
+        parse_mode: 'Markdown',
+        reply_markup: {
+          inline_keyboard: [
+            [{ text: '🔙 Назад в меню', callback_data: 'back_to_menu' }],
+          ],
+        },
+      },
+    );
+  }
+
+  @Action('admin_notifstats')
+  async handleAdminNotifStatsCallback(@Ctx() ctx: Context) {
+    await ctx.answerCbQuery();
+    const tgId = ctx.from?.id;
+    if (!tgId || !this.isAdmin(tgId)) {
+      await ctx.reply('❌ У вас нет прав для выполнения этой команды.');
+      return;
+    }
+    await this.onNotificationStats(ctx);
   }
 }

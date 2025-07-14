@@ -12,8 +12,8 @@ import * as redisStore from 'cache-manager-redis-store';
         host: configService.get('REDIS_HOST', 'localhost'),
         port: configService.get('REDIS_PORT', 6379),
         password: configService.get('REDIS_PASSWORD'),
-        ttl: 60 * 60 * 24, // 24 часа по умолчанию
-        max: 1000, // максимальное количество ключей в кэше
+        ttl: 60 * 60 * 24, 
+        max: 1000, 
       }),
       inject: [ConfigService],
     }),

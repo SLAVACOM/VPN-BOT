@@ -208,7 +208,9 @@ export class PaymentHistoryService {
       this.prisma.payment.count({ where: whereClause }),
 
       // Количество успешных платежей
-      this.prisma.payment.count({ where: { ...whereClause, status: 'completed' }}),
+      this.prisma.payment.count({
+        where: { ...whereClause, status: 'completed' },
+      }),
 
       // Общая сумма успешных платежей
       this.prisma.payment.aggregate({

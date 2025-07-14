@@ -5,6 +5,8 @@ import { PrismaService } from 'prisma/prisma.service';
 export class UserService {
   constructor(private prisma: PrismaService) {}
 
+  private readonly trialPeriodDays = Number(process.env.TRIAL_PERIOD_DAYS) || 7;
+
   async findByTelegramId(telegramId: number) {
     return this.prisma.user.findUnique({
       where: { telegramId: BigInt(telegramId) },
@@ -26,6 +28,10 @@ export class UserService {
       `[UserService] Creating user with TG ID: ${telegramId}, invitedById: ${invitedById}`,
     );
 
+    const trialEnd = new Date();
+    trialEnd.setDate(trialEnd.getDate() + this.trialPeriodDays);
+    trialEnd.setHours(23, 59, 59, 999); // Устанавливаем конец дня по локальному времени
+
     const userData = {
       telegramId: BigInt(telegramId),
       username,
@@ -35,21 +41,37 @@ export class UserService {
       wgId: config?.wgId,
       invitedById: invitedById,
       configIssued: true,
+      subscriptionEnd: trialEnd, 
     };
 
     console.log(`[UserService] User data to create:`, {
       ...userData,
       telegramId: userData.telegramId.toString(),
+      subscriptionEnd: userData.subscriptionEnd
     });
 
     const createdUser = await this.prisma.user.create({
       data: userData,
     });
 
+    // Логируем событие выдачи пробного периода
+    await this.prisma.eventLog.create({
+      data: {
+        userId: createdUser.id,
+        action: 'TRIAL_PERIOD_GRANTED',
+        metadata: {
+          trialDays: this.trialPeriodDays,
+          trialEndDate: trialEnd,
+          isNewUser: true,
+        },
+      },
+    });
+
     console.log(`[UserService] User created successfully:`, {
       id: createdUser.id,
       telegramId: createdUser.telegramId.toString(),
       invitedById: createdUser.invitedById,
+      subscriptionEnd: createdUser.subscriptionEnd
     });
 
     return createdUser;
@@ -335,6 +357,41 @@ export class UserService {
       console.error('Error adding subscription days:', error);
       return { success: false, newSubscriptionEnd: null };
     }
+  }
+
+  /**
+   * Проверить, является ли подписка пользователя пробным периодом
+   */
+  async isTrialPeriod(userId: number): Promise<boolean> {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: {
+        subscriptionEnd: true,
+        promoCodeUsedId: true,
+        createdAt: true,
+      },
+    });
+
+    if (!user?.subscriptionEnd) {
+      return false;
+    }
+
+    const now = new Date();
+
+    // Если подписка истекла, это не пробный период
+    if (user.subscriptionEnd <= now) {
+      return false;
+    }
+
+    // Если пользователь использовал промокод, это не пробный период
+    if (user.promoCodeUsedId) {
+      return false;
+    }
+
+    // Если пользователь создан менее 8 дней назад, считаем это пробным периодом
+    const daysSinceCreation =
+      (now.getTime() - user.createdAt.getTime()) / (1000 * 60 * 60 * 24);
+    return daysSinceCreation < 8;
   }
 
   /**

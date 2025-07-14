@@ -3,12 +3,33 @@ import { Inject, Injectable } from '@nestjs/common';
 import { SubscriptionPlan } from '@prisma/client';
 import { Cache } from 'cache-manager';
 import { PrismaService } from '../../prisma/prisma.service';
-import {
-  CreateInvoiceResult,
-  PaymentCallbackData,
-  PaymentPlan,
-} from './interfaces';
 import { PaymentHistoryService } from './payment-history.service';
+
+export interface PaymentPlan {
+  id: string;
+  name: string;
+  description: string;
+  price: number; // в копейках
+  days: number;
+  popular?: boolean;
+}
+
+export interface DatabasePlan extends SubscriptionPlan {}
+
+export interface CreateInvoiceResult {
+  success: boolean;
+  invoicePayload?: string;
+  message?: string;
+}
+
+export interface PaymentCallbackData {
+  telegramPaymentChargeId: string;
+  providerPaymentChargeId: string;
+  userId: number;
+  planId: string;
+  amount: number;
+  currency: string;
+}
 
 @Injectable()
 export class PaymentService {
@@ -83,7 +104,6 @@ export class PaymentService {
       return plans;
     } catch (error) {
       console.error('[PAYMENT] Error loading plans:', error);
-      // Возвращаем пустой массив или fallback планы
       return [];
     }
   }
@@ -230,7 +250,7 @@ export class PaymentService {
         providerPaymentChargeId,
         userId: parseInt(userId),
         planId,
-        totalAmount,
+        amount: totalAmount,
         currency,
       };
     } catch (error) {
