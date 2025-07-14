@@ -2,7 +2,7 @@ FROM node:20-alpine
 
 RUN apk --no-cache add \
     openssl \
-    bash ncies only when needed
+    bash 
 
 WORKDIR /app
 
