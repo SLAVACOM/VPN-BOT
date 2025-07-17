@@ -1,7 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { InjectBot } from 'nestjs-telegraf';
 import { PrismaService } from 'prisma/prisma.service';
-import { safeMarkdown } from 'src/utils/format.utils';
+import { escapeUserInput, safeMarkdown } from 'src/utils/format.utils';
 import { Telegraf } from 'telegraf';
 
 @Injectable()
@@ -78,7 +78,7 @@ export class NotificationService {
     days: number,
     newExpiryDate: Date,
   ): Promise<boolean> {
-    const message = `🎉 *Платеж успешно обработан!*\n\n✅ Подписка активирована\n📦 План: ${planName}\n⏰ Период: ${days} дней\n📅 Действует до: ${newExpiryDate.toLocaleDateString('ru-RU')}\n\n🚀 Теперь вы можете использовать VPN!`;
+    const message = `🎉 *Платеж успешно обработан!*\n\n✅ Подписка активирована\n📦 План: ${escapeUserInput(planName)}\n⏰ Период: ${days} дней\n📅 Действует до: ${newExpiryDate.toLocaleDateString('ru-RU')}\n\n🚀 Теперь вы можете использовать VPN!`;
 
     return this.sendPersonalNotification(userId, message, {
       logAction: 'PAYMENT_SUCCESS_NOTIFICATION_SENT',
@@ -103,7 +103,7 @@ export class NotificationService {
     daysAdded: number,
     newExpiryDate: Date,
   ): Promise<boolean> {
-    const message = `🎫 *Промокод активирован!*\n\n✅ Код: ${promoCode}\n⏰ Добавлено дней: ${daysAdded}\n📅 Подписка действует до: ${newExpiryDate.toLocaleDateString('ru-RU')}\n\n🎉 Приятного пользования VPN!`;
+    const message = `🎫 *Промокод активирован!*\n\n✅ Код: ${escapeUserInput(promoCode)}\n⏰ Добавлено дней: ${daysAdded}\n📅 Подписка действует до: ${newExpiryDate.toLocaleDateString('ru-RU')}\n\n🎉 Приятного пользования VPN!`;
 
     return this.sendPersonalNotification(userId, message, {
       logAction: 'PROMO_ACTIVATION_NOTIFICATION_SENT',
@@ -158,8 +158,9 @@ export class NotificationService {
     }
 
     const displayName = username
-      ? `@${username}`
-      : `${firstName || ''} ${lastName || ''}`.trim() || 'Без имени';
+      ? `@${escapeUserInput(username)}`
+      : `${escapeUserInput(firstName || '')} ${escapeUserInput(lastName || '')}`.trim() ||
+        'Без имени';
 
     let message = `👤 *Новая регистрация!*\n\n`;
     message += `🆔 ID пользователя: ${newUserId}\n`;
@@ -169,7 +170,7 @@ export class NotificationService {
     message += `📅 Дата регистрации: ${new Date().toLocaleString('ru-RU', { timeZone: 'Europe/Moscow' })}`;
 
     if (referrerName) {
-      message += `\n👥 Пригласил: ${referrerName}`;
+      message += `\n👥 Пригласил: ${escapeUserInput(referrerName)}`;
     }
 
     let successCount = 0;
@@ -231,15 +232,16 @@ export class NotificationService {
     }
 
     const displayName = username
-      ? `@${username}`
-      : `${firstName || ''} ${lastName || ''}`.trim() || 'Без имени';
+      ? `@${escapeUserInput(username)}`
+      : `${escapeUserInput(firstName || '')} ${escapeUserInput(lastName || '')}`.trim() ||
+        'Без имени';
 
     let message = `💰 *Новая покупка!*\n\n`;
     message += `🆔 ID пользователя: ${userId}\n`;
     message += `👋 Имя: ${displayName}\n`;
-    message += `📦 План: ${planName}\n`;
-    message += `💵 Сумма: ${amount} ${currency}\n`;
-    message += `💳 Способ оплаты: ${paymentMethod}\n`;
+    message += `📦 План: ${escapeUserInput(planName)}\n`;
+    message += `💵 Сумма: ${amount} ${escapeUserInput(currency)}\n`;
+    message += `💳 Способ оплаты: ${escapeUserInput(paymentMethod)}\n`;
     message += `📅 Дата покупки: ${new Date().toLocaleString('ru-RU', { timeZone: 'Europe/Moscow' })}`;
 
     let successCount = 0;

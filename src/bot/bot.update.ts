@@ -6,6 +6,7 @@ import { PaymentHistoryService } from 'src/payment/payment-history.service';
 import { PaymentService } from 'src/payment/payment.service';
 import { PlanAdminService } from 'src/payment/plan-admin.service';
 import { UserService } from 'src/user/user.service';
+import { escapeUserInput } from 'src/utils/format.utils';
 import { WireGuardService } from 'src/wireGuardService/WireGuardService.service';
 import { Context } from 'telegraf';
 import { InlineKeyboardMarkup } from 'telegraf/typings/core/types/typegram';
@@ -1597,13 +1598,13 @@ export class BotUpdate {
       message += `📋 **По статусам:**\n`;
       stats.paymentsByStatus.forEach((stat) => {
         const amount = (stat._sum.amount || 0) / 100;
-        message += `• ${stat.status}: ${stat._count.status.toString()} (${amount.toFixed(2)} ₽)\n`;
+        message += `• ${escapeUserInput(stat.status)}: ${stat._count.status.toString()} (${amount.toFixed(2)} ₽)\n`;
       });
 
       message += `\n💳 *По методам оплаты:*\n`;
       stats.paymentsByMethod.forEach((stat) => {
         const amount = (stat._sum.amount || 0) / 100;
-        message += `• ${stat.method}: ${stat._count.method.toString()} (${amount.toFixed(2)} ₽)\n`;
+        message += `• ${escapeUserInput(stat.method)}: ${stat._count.method.toString()} (${amount.toFixed(2)} ₽)\n`;
       });
 
       // Для статистических сообщений не используем экранирование,
