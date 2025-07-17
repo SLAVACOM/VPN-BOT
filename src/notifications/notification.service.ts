@@ -1,7 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { InjectBot } from 'nestjs-telegraf';
 import { PrismaService } from 'prisma/prisma.service';
-import { escapeMarkdown } from 'src/utils/format.utils';
+import { safeMarkdown } from 'src/utils/format.utils';
 import { Telegraf } from 'telegraf';
 
 @Injectable()
@@ -38,7 +38,7 @@ export class NotificationService {
 
       await this.bot.telegram.sendMessage(
         user.telegramId.toString(),
-        escapeMarkdown(message),
+        safeMarkdown(message),
         {
           parse_mode: options?.parseMode || 'Markdown',
           reply_markup: options?.replyMarkup,
@@ -177,7 +177,7 @@ export class NotificationService {
       try {
         await this.bot.telegram.sendMessage(
           adminId.toString(),
-          escapeMarkdown(message),
+          safeMarkdown(message),
           {
             parse_mode: 'Markdown',
           },
@@ -247,7 +247,7 @@ export class NotificationService {
       try {
         await this.bot.telegram.sendMessage(
           adminId.toString(),
-          escapeMarkdown(message),
+          safeMarkdown(message),
           {
             parse_mode: 'Markdown',
           },

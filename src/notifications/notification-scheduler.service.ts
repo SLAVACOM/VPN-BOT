@@ -634,7 +634,11 @@ export class NotificationSchedulerService {
     if (!user.subscriptionEnd) return false;
 
     const now = new Date();
-    if (user.subscriptionEnd <= now) return false;
+    const todayStart = new Date(now);
+    todayStart.setHours(0, 0, 0, 0);
+
+    // Подписка активна, если дата окончания >= начала сегодняшнего дня
+    if (user.subscriptionEnd < todayStart) return false;
 
     if (user.promoCodeUsedId) return false;
 
@@ -866,20 +870,30 @@ export class NotificationSchedulerService {
   @Cron('0 0 * * *', {
     name: 'subscription-access-management',
     timeZone: 'Europe/Moscow',
-	})
+  })
   async manageSubscriptionAccess() {
     this.logger.log('🔐 Запуск управления доступом к подпискам...');
 
     try {
       const now = new Date();
 
-      // 1. Найти пользователей с истекшими подписками
+      // Вчерашний день - подписки, которые истекли вчера и должны быть отключены сегодня
+      const yesterday = new Date(now);
+      yesterday.setDate(yesterday.getDate() - 1);
+      yesterday.setHours(0, 0, 0, 0);
+
+      const endOfYesterday = new Date(yesterday);
+      endOfYesterday.setHours(23, 59, 59, 999);
+
+      // 1. Найти пользователей с подписками, которые истекли вчера
+      // Подписка действует до конца дня, поэтому отключаем только тех, у кого subscriptionEnd был вчера
       const expiredUsers = await this.prisma.user.findMany({
         where: {
           subscriptionEnd: {
-            lt: now,
+            gte: yesterday,
+            lte: endOfYesterday,
           },
-					configIssued: true, 
+          configIssued: true,
           isDeleted: false,
           wgId: {
             not: null,
@@ -895,10 +909,15 @@ export class NotificationSchedulerService {
         },
       });
 
+      // 2. Найти пользователей с активными подписками (subscriptionEnd >= сегодня)
+      // Подписка активна, если дата окончания сегодня или в будущем
+      const todayStart = new Date(now);
+      todayStart.setHours(0, 0, 0, 0);
+
       const activeUsers = await this.prisma.user.findMany({
         where: {
           subscriptionEnd: {
-            gte: now,
+            gte: todayStart,
           },
           isDeleted: false,
           wgId: {
@@ -916,7 +935,7 @@ export class NotificationSchedulerService {
       let expiredErrors = 0;
       let activeErrors = 0;
 
-			for (const user of expiredUsers) {
+      for (const user of expiredUsers) {
         try {
           if (user.wgId) {
             const disabled = await this.wireGuardService.disableClient(
@@ -934,9 +953,9 @@ export class NotificationSchedulerService {
           const subscriptionType = isTrialUser ? 'пробный период' : 'подписка';
 
           const message =
-            `⏰ *Ваш ${subscriptionType} истек*\n\n` +
-            `📅 Дата окончания: ${user.subscriptionEnd?.toLocaleDateString('ru-RU')}\n` +
-            `🚫 Доступ к VPN приостановлен\n\n` +
+            `⏰ *Ваш ${subscriptionType} закончился*\n\n` +
+            `📅 Действовал до: ${user.subscriptionEnd?.toLocaleDateString('ru-RU')}\n` +
+            `🚫 С сегодняшнего дня доступ к VPN приостановлен\n\n` +
             `💡 *Как продолжить пользоваться VPN?*\n` +
             `• 💳 Купите подписку в главном меню\n` +
             `• 🎫 Активируйте промокод\n` +

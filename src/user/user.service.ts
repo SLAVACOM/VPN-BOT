@@ -41,13 +41,13 @@ export class UserService {
       wgId: config?.wgId,
       invitedById: invitedById,
       configIssued: true,
-      subscriptionEnd: trialEnd, 
+      subscriptionEnd: trialEnd,
     };
 
     console.log(`[UserService] User data to create:`, {
       ...userData,
       telegramId: userData.telegramId.toString(),
-      subscriptionEnd: userData.subscriptionEnd
+      subscriptionEnd: userData.subscriptionEnd,
     });
 
     const createdUser = await this.prisma.user.create({
@@ -71,7 +71,7 @@ export class UserService {
       id: createdUser.id,
       telegramId: createdUser.telegramId.toString(),
       invitedById: createdUser.invitedById,
-      subscriptionEnd: createdUser.subscriptionEnd
+      subscriptionEnd: createdUser.subscriptionEnd,
     });
 
     return createdUser;
@@ -180,22 +180,35 @@ export class UserService {
     try {
       const result = await this.prisma.$transaction(async (tx) => {
         // Обновить пользователя
+        const now = new Date();
+        const todayStart = new Date(now);
+        todayStart.setHours(0, 0, 0, 0);
+
         const newSubscriptionEnd = new Date();
         newSubscriptionEnd.setDate(
           newSubscriptionEnd.getDate() + promo.discountDays,
         );
+        // Устанавливаем время на конец дня
+        newSubscriptionEnd.setHours(23, 59, 59, 999);
+
+        let finalSubscriptionEnd: Date;
+        if (user.subscriptionEnd && user.subscriptionEnd >= todayStart) {
+          // Если есть активная подписка, продлеваем её
+          finalSubscriptionEnd = new Date(user.subscriptionEnd);
+          finalSubscriptionEnd.setDate(
+            finalSubscriptionEnd.getDate() + promo.discountDays,
+          );
+          finalSubscriptionEnd.setHours(23, 59, 59, 999);
+        } else {
+          // Если нет активной подписки, создаём новую
+          finalSubscriptionEnd = newSubscriptionEnd;
+        }
 
         const updatedUser = await tx.user.update({
           where: { id: userId },
           data: {
             promoCodeUsedId: promo.id,
-            subscriptionEnd:
-              user.subscriptionEnd && user.subscriptionEnd > new Date()
-                ? new Date(
-                    user.subscriptionEnd.getTime() +
-                      promo.discountDays * 24 * 60 * 60 * 1000,
-                  )
-                : newSubscriptionEnd,
+            subscriptionEnd: finalSubscriptionEnd,
           },
         });
 
@@ -329,16 +342,23 @@ export class UserService {
       }
 
       const now = new Date();
+      const todayStart = new Date(now);
+      todayStart.setHours(0, 0, 0, 0);
+
       let newSubscriptionEnd: Date;
 
       // Если у пользователя уже есть активная подписка, продлеваем её
-      if (user.subscriptionEnd && user.subscriptionEnd > now) {
+      if (user.subscriptionEnd && user.subscriptionEnd >= todayStart) {
         newSubscriptionEnd = new Date(user.subscriptionEnd);
         newSubscriptionEnd.setDate(newSubscriptionEnd.getDate() + days);
+        // Устанавливаем время на конец дня
+        newSubscriptionEnd.setHours(23, 59, 59, 999);
       } else {
         // Если подписки нет или она истекла, создаём новую
         newSubscriptionEnd = new Date();
         newSubscriptionEnd.setDate(newSubscriptionEnd.getDate() + days);
+        // Устанавливаем время на конец дня
+        newSubscriptionEnd.setHours(23, 59, 59, 999);
       }
 
       await this.prisma.user.update({
@@ -377,9 +397,11 @@ export class UserService {
     }
 
     const now = new Date();
+    const todayStart = new Date(now);
+    todayStart.setHours(0, 0, 0, 0);
 
-    // Если подписка истекла, это не пробный период
-    if (user.subscriptionEnd <= now) {
+    // Если подписка истекла (дата окончания меньше начала сегодняшнего дня), это не пробный период
+    if (user.subscriptionEnd < todayStart) {
       return false;
     }
 

@@ -6,7 +6,6 @@ import { PaymentHistoryService } from 'src/payment/payment-history.service';
 import { PaymentService } from 'src/payment/payment.service';
 import { PlanAdminService } from 'src/payment/plan-admin.service';
 import { UserService } from 'src/user/user.service';
-import { escapeMarkdown } from 'src/utils/format.utils';
 import { WireGuardService } from 'src/wireGuardService/WireGuardService.service';
 import { Context } from 'telegraf';
 import { InlineKeyboardMarkup } from 'telegraf/typings/core/types/typegram';
@@ -1607,7 +1606,9 @@ export class BotUpdate {
         message += `• ${stat.method}: ${stat._count.method.toString()} (${amount.toFixed(2)} ₽)\n`;
       });
 
-      await ctx.reply(escapeMarkdown(message), { parse_mode: 'MarkdownV2' });
+      // Для статистических сообщений не используем экранирование,
+      // так как мы контролируем весь контент
+      await ctx.reply(message, { parse_mode: 'Markdown' });
     } catch (error) {
       console.error('Error getting payment statistics:', error);
       await ctx.reply('❌ Произошла ошибка при получении статистики.');
